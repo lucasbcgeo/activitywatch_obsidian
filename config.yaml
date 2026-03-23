@@ -1,0 +1,8 @@
+note_section: "## Dados"
+
+# Formato legível para o corpo da nota (não afeta frontmatter que usa ISO 8601)
+duration_display: "{h}h{m:02d}"
+
+# Override de categorias (app → categoria)
+# Complementa as categorias já configuradas no ActivityWatch
+category_overrides: {}
