@@ -8,7 +8,7 @@ Preencher a propriedade raiz `games` da nota diária com a duração da categori
 
 - Manter a estrutura atual sob `pc` sem alterações.
 - Procurar `Games` em `DailyActivity.categories` sem diferenciar maiúsculas de minúsculas.
-- Quando a categoria existir e sua duração for positiva, gerar `games` como duração ISO 8601 usando o formatter existente (`seconds_to_iso`), por exemplo `games: PT1H30M0S`.
+- Quando a categoria existir e sua duração for positiva, gerar `games` como duração ISO 8601 compacta usando o formatter existente (`seconds_to_iso`), por exemplo `games: PT1H30M`.
 - Quando a categoria estiver ausente ou tiver duração zero, omitir `games`.
 - Não agregar subcategorias como `Games > Steam`; somente a categoria exata `Games` entra nesta propriedade.
 
