@@ -37,7 +37,15 @@ def format_frontmatter(activity: DailyActivity) -> dict:
             if w.duration_seconds >= min_web and w.domain.lower() not in ignore_web
         ]
 
-    return {"pc": pc}
+    result = {"pc": pc}
+    games = next(
+        (c for c in activity.categories if c.name.casefold() == "games" and c.total_seconds > 0),
+        None,
+    )
+    if games:
+        result["games"] = seconds_to_iso(games.total_seconds)
+
+    return result
 
 
 def format_body(activity: DailyActivity) -> str:
