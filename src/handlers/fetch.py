@@ -6,8 +6,58 @@ from datetime import date, datetime, timedelta, timezone
 import requests
 from aw_client import ActivityWatchClient
 
-from data.models import AppUsage, Category, DailyActivity, StudyItem, WebVisit
+from data.models import AppUsage, Category, DailyActivity, IntervaloEntry, StudyItem, WebVisit
 from util.clean import clean_app_name, clean_domain
+
+INTERVALO_APPS = {
+    "Intervalo": "Pausa Longa",
+    "Pausa Rápida": "Pausa Rápida",
+    "Café da manhã": "Café da manhã",
+    "Almoço": "Almoço",
+    "Jantar": "Jantar",
+    "Exercícios": "Exercícios",
+}
+INTERVALO_GROUP = {
+    "Pausa Longa": "Intervalo",
+    "Pausa Rápida": "Intervalo",
+    "Café da manhã": "Intervalo",
+    "Almoço": "Intervalo",
+    "Jantar": "Intervalo",
+    "Exercícios": "Exercícios",
+}
+INTERVALO_ORDER = [
+    "Pausa Longa",
+    "Pausa Rápida",
+    "Café da manhã",
+    "Almoço",
+    "Jantar",
+    "Exercícios",
+]
+
+
+def _extract_intervalos(
+    app_totals: dict[str, float],
+) -> tuple[list[IntervaloEntry], dict[str, float]]:
+    """Separa apps de intervalo (.exe dummy) dos apps normais de PC.
+
+    Returns:
+        (lista de IntervaloEntry ordenada por (group, ordem fixa),
+         dict app_totals sem os apps de intervalo)
+    """
+    intervalos: list[IntervaloEntry] = []
+    remaining: dict[str, float] = {}
+    for app_name, secs in app_totals.items():
+        rotulo = INTERVALO_APPS.get(app_name)
+        if rotulo:
+            intervalos.append(
+                IntervaloEntry(rotulo, INTERVALO_GROUP[rotulo], secs)
+            )
+        else:
+            remaining[app_name] = secs
+    intervalos.sort(
+        key=lambda x: (x.group, INTERVALO_ORDER.index(x.rotulo))
+    )
+    return intervalos, remaining
 
 logger = logging.getLogger("aw-sync.fetch")
 
@@ -53,14 +103,21 @@ def fetch_daily(client: ActivityWatchClient, target_date: date) -> DailyActivity
     window_bid = _find_bucket(buckets, "aw-watcher-window")
     app_totals: dict[str, float] = {}
     total_seconds = 0.0
+    intervalos: list[IntervaloEntry] = []
     if window_bid:
         events = client.get_events(window_bid, limit=-1, start=start, end=end)
         raw_totals = _aggregate_events(events, lambda e: e.get("data", {}).get("app", ""))
         for raw_name, secs in raw_totals.items():
             clean = clean_app_name(raw_name)
             app_totals[clean] = app_totals.get(clean, 0.0) + secs
+        intervalos, app_totals = _extract_intervalos(app_totals)
         total_seconds = sum(app_totals.values())
-        logger.info("Window: %d eventos, %.0fs total", len(events), total_seconds)
+        logger.info(
+            "Window: %d eventos, %.0fs total PC, %d intervalos",
+            len(events),
+            total_seconds,
+            len(intervalos),
+        )
 
     # --- AFK watcher (tempo ativo) ---
     afk_bid = _find_bucket(buckets, "aw-watcher-afk")
@@ -124,6 +181,7 @@ def fetch_daily(client: ActivityWatchClient, target_date: date) -> DailyActivity
         uncategorized=apps_sorted,
         web=web_list,
         study=study_items,
+        intervalos=intervalos,
     )
 
 
