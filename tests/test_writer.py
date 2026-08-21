@@ -109,6 +109,70 @@ class UpdateIntervalosTests(unittest.TestCase):
             content = note.read_text(encoding="utf-8")
             self.assertIn(f"{AW_START_INTERVALO}\n\n{AW_END_INTERVALO}", content)
 
+    def test_sem_secao_horarios_faz_append_final(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "2026-08-20.md"
+            # Note without ## ⏰ Horários section and without intervalos markers
+            note.write_text(
+                "---\nnota: x\n---\n\n## 🗓️ Eventos\n\nconteudo\n",
+                encoding="utf-8",
+            )
+            intervalo_block = (
+                f"{AW_START_INTERVALO}\n> [!pause]+  Intervalo\n> - Jantar (36m)\n{AW_END_INTERVALO}"
+            )
+            update_note(
+                str(note),
+                {"pc": {"total": "PT1H"}},
+                f"{AW_START}\npc\n{AW_END}",
+                None,
+                intervalo_block,
+            )
+            content = note.read_text(encoding="utf-8")
+            self.assertIn("Jantar (36m)", content)
+            self.assertIn(AW_START_INTERVALO, content)
+            self.assertIn(AW_END_INTERVALO, content)
+            # Block appended after existing content (Eventos section intact before it)
+            idx_eventos = content.index("## 🗓️ Eventos")
+            idx_intervalo = content.index(AW_START_INTERVALO)
+            self.assertLess(idx_eventos, idx_intervalo)
+
+    def test_pc_e_intervalos_coexistem_em_nota_completa(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "2026-08-20.md"
+            # Production-shaped note with both ## Dados and ## ⏰ Horários
+            note.write_text(
+                "---\nnota: x\n---\n\n"
+                "## Dados\n\n"
+                f"{AW_START}\n\n{AW_END}\n\n"
+                "## ⏰ Horários\n\n"
+                f"{AW_START_INTERVALO}\n\n{AW_END_INTERVALO}\n\n"
+                "## 🗓️ Eventos\n\nconteudo\n",
+                encoding="utf-8",
+            )
+            pc_block = f"{AW_START}\n> [!abstract]+  Apps\n> - VS Code (1h00)\n{AW_END}"
+            intervalo_block = (
+                f"{AW_START_INTERVALO}\n> [!pause]+  Intervalo\n> - Jantar (36m)\n{AW_END_INTERVALO}"
+            )
+            update_note(
+                str(note),
+                {"pc": {"total": "PT1H"}},
+                pc_block,
+                None,
+                intervalo_block,
+            )
+            content = note.read_text(encoding="utf-8")
+            # PC block landed in ## Dados region (before ## ⏰ Horários)
+            self.assertIn("VS Code (1h00)", content)
+            idx_pc = content.index("VS Code (1h00)")
+            idx_horarios = content.index("## ⏰ Horários")
+            self.assertLess(idx_pc, idx_horarios)
+            # Intervalos block landed in ## ⏰ Horários region (after header, before Eventos)
+            self.assertIn("Jantar (36m)", content)
+            idx_intervalo = content.index("Jantar (36m)")
+            idx_eventos = content.index("## 🗓️ Eventos")
+            self.assertLess(idx_horarios, idx_intervalo)
+            self.assertLess(idx_intervalo, idx_eventos)
+
 
 if __name__ == "__main__":
     unittest.main()
