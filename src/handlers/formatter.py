@@ -1,11 +1,20 @@
 import logging
 
-from data.models import DailyActivity, IntervaloEntry
+from data.models import DailyActivity
 from util.time_fmt import seconds_to_display, seconds_to_iso
 
 logger = logging.getLogger("aw-sync.formatter")
 
 TOP_N = 5
+
+INTERVALO_MARKERS = {
+    "Pausa Longa": "pausa-longa",
+    "Pausa Rápida": "pausa-curta",
+    "Café da manhã": "café",
+    "Almoço": "almoço",
+    "Jantar": "jantar",
+    "Exercícios": "exercícios",
+}
 
 
 def format_frontmatter(activity: DailyActivity) -> dict:
@@ -124,31 +133,11 @@ def format_body(activity: DailyActivity) -> str:
     return "\n".join(lines)
 
 
-def format_intervalos_block(activity: DailyActivity) -> str:
-    """Gera bloco Markdown com callouts multi-column para intervalos e exercicios.
-
-    Soh itens cuja display seja >=1 minuto aparecem (omite "0m"). Grupo soh aparece
-    se tiver >=1 item. Ordem dos grupos fixa (Intervalo, Exercicios); ordem dos itens
-    preservada pela pre-ordenacao em fetch.
-    """
-    groups: dict[str, list[IntervaloEntry]] = {}
+def format_intervalo_contents(activity: DailyActivity) -> dict[str, str]:
+    """Slug de marcador -> conteúdo interior ('· XhYY' ou '' sem dados do dia)."""
+    contents = {slug: "" for slug in INTERVALO_MARKERS.values()}
     for iv in activity.intervalos:
-        if seconds_to_display(iv.duration_seconds) != "0m":
-            groups.setdefault(iv.group, []).append(iv)
-
-    lines = ["<!-- aw:start-intervalos -->"]
-    if groups:
-        lines.append("> [!multi-column]")
-        for group_name in ("Intervalo", "Exercícios"):
-            items = groups.get(group_name)
-            if not items:
-                continue
-            icon = "pause" if group_name == "Intervalo" else "fitness"
-            lines.append(f">> [!{icon}]+  {group_name}")
-            for iv in items:
-                lines.append(
-                    f">> - {iv.rotulo} ({seconds_to_display(iv.duration_seconds)})"
-                )
-            lines.append(">")
-    lines.append("<!-- aw:end-intervalos -->")
-    return "\n".join(lines)
+        slug = INTERVALO_MARKERS.get(iv.rotulo)
+        if slug and seconds_to_display(iv.duration_seconds) != "0m":
+            contents[slug] = f"· {seconds_to_display(iv.duration_seconds)}"
+    return contents

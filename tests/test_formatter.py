@@ -32,85 +32,53 @@ class FormatFrontmatterTests(unittest.TestCase):
 
 
 from data.models import IntervaloEntry
-from handlers.formatter import format_intervalos_block
+from handlers.formatter import INTERVALO_MARKERS, format_intervalo_contents
 
 
-class FormatIntervalosTests(unittest.TestCase):
+class FormatIntervaloContentsTests(unittest.TestCase):
     def _activity(self, intervalos):
         return DailyActivity(
-            date=date(2026, 8, 20).isoformat(),
+            date=date(2026, 8, 21).isoformat(),
             total_seconds=0,
             active_seconds=0,
             intervalos=intervalos,
         )
 
-    def test_so_itens_positivos_aparecem(self):
-        activity = self._activity([
-            IntervaloEntry("Jantar", "Intervalo", 2160),    # 36m
-            IntervaloEntry("Exercícios", "Exercícios", 0),  # omitido
-        ])
-        block = format_intervalos_block(activity)
-        self.assertIn("Jantar (36m)", block)
-        self.assertNotIn("Exercícios", block)
-        self.assertIn("<!-- aw:start-intervalos -->", block)
-        self.assertIn("<!-- aw:end-intervalos -->", block)
+    def test_seis_slugs_sempre_presentes(self):
+        contents = format_intervalo_contents(self._activity([]))
+        self.assertEqual(
+            set(contents),
+            {"pausa-longa", "pausa-curta", "café", "almoço", "jantar", "exercícios"},
+        )
 
-    def test_grupo_so_aparece_se_tem_item_positivo(self):
-        activity = self._activity([])
-        block = format_intervalos_block(activity)
-        self.assertNotIn("Intervalo", block)
-        self.assertNotIn("Exercícios", block)
-        self.assertIn("<!-- aw:start-intervalos -->", block)
-        self.assertIn("<!-- aw:end-intervalos -->", block)
-
-    def test_preserva_ordem_pre_ordenada_do_grupo(self):
-        # fetch pre-sorts by (group, INTERVALO_ORDER.index(rotulo)):
-        # Pausa Rápida comes before Jantar. Formatter must preserve that order.
+    def test_zero_ou_ausente_vazio(self):
         activity = self._activity([
-            IntervaloEntry("Pausa Rápida", "Intervalo", 120),
-            IntervaloEntry("Jantar", "Intervalo", 300),
+            IntervaloEntry("Jantar", "Intervalo", 0),
+            IntervaloEntry("Pausa Longa", "Intervalo", 30),  # < 60s -> "0m"
         ])
-        block = format_intervalos_block(activity)
-        self.assertLess(block.index("Pausa Rápida"), block.index("Jantar"))
+        contents = format_intervalo_contents(activity)
+        self.assertEqual(contents["jantar"], "")
+        self.assertEqual(contents["pausa-longa"], "")
 
-    def test_duas_secoes_intervalo_e_exercicios(self):
+    def test_positivo_minutos_formato_separador(self):
         activity = self._activity([
-            IntervaloEntry("Jantar", "Intervalo", 2160),
-            IntervaloEntry("Exercícios", "Exercícios", 2700),
+            IntervaloEntry("Café da manhã", "Intervalo", 1860),  # 31m
         ])
-        block = format_intervalos_block(activity)
-        self.assertIn("Intervalo", block)
-        self.assertIn("Exercícios", block)
-        self.assertIn("Jantar (36m)", block)
-        self.assertIn("Exercícios (45m)", block)
+        self.assertEqual(format_intervalo_contents(activity)["café"], "· 31m")
 
-    def test_sem_porcentagem_no_bloco(self):
+    def test_positivo_horas_formato_separador(self):
         activity = self._activity([
-            IntervaloEntry("Jantar", "Intervalo", 2160),
+            IntervaloEntry("Exercícios", "Exercícios", 8100),  # 2h15
         ])
-        block = format_intervalos_block(activity)
-        self.assertNotIn("%", block)
+        self.assertEqual(format_intervalo_contents(activity)["exercícios"], "· 2h15")
 
-    def test_primeira_coluna_direto_apos_header_sem_separador(self):
+    def test_mapeamento_pausa_rapida_vira_pausa_curta(self):
         activity = self._activity([
-            IntervaloEntry("Jantar", "Intervalo", 2160),
+            IntervaloEntry("Pausa Rápida", "Intervalo", 300),
         ])
-        block = format_intervalos_block(activity)
-        # Matches format_body pattern: first column directly after [!multi-column]
-        self.assertIn("> [!multi-column]\n>> [!pause]+  Intervalo", block)
-        self.assertNotIn("> [!multi-column]\n>\n>> [!pause]+  Intervalo", block)
-
-    def test_sub_minuto_omitido_nao_mostra_0m(self):
-        activity = self._activity([
-            IntervaloEntry("Jantar", "Intervalo", 2160),       # 36m, shows
-            IntervaloEntry("Exercícios", "Exercícios", 30),    # 0m, omitted
-            IntervaloEntry("Pausa Longa", "Intervalo", 11),    # 0m, omitted
-        ])
-        block = format_intervalos_block(activity)
-        self.assertIn("Jantar (36m)", block)
-        self.assertNotIn("Exercícios", block)
-        self.assertNotIn("Pausa Longa", block)
-        self.assertNotIn("(0m)", block)
+        contents = format_intervalo_contents(activity)
+        self.assertEqual(contents["pausa-curta"], "· 5m")
+        self.assertNotIn("pausa-rápida", contents)
 
 
 if __name__ == "__main__":
