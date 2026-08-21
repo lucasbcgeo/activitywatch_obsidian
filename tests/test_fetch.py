@@ -40,11 +40,12 @@ class ExtractIntervalosTests(unittest.TestCase):
         self.assertEqual(remaining, app_totals)
 
     def test_mapeamento_intervalo_exe_vira_pausa_longa(self):
-        app_totals = {"Intervalo": 120.0}
-        intervalos, remaining = _extract_intervalos(app_totals)
-        self.assertEqual(intervalos[0].rotulo, "Pausa Longa")
-        self.assertEqual(intervalos[0].group, "Intervalo")
-        self.assertEqual(remaining, {})
+        for app in ("Intervalo", "Pausa Longa"):  # legado + novo nome do dummy
+            with self.subTest(app=app):
+                intervalos, remaining = _extract_intervalos({app: 120.0})
+                self.assertEqual(intervalos[0].rotulo, "Pausa Longa")
+                self.assertEqual(intervalos[0].group, "Intervalo")
+                self.assertEqual(remaining, {})
 
     def test_constantes_cobrem_os_6_rotulos(self):
         self.assertEqual(
@@ -58,6 +59,7 @@ class ExtractIntervalosTests(unittest.TestCase):
         from util.clean import clean_app_name
         raw_apps = [
             "Intervalo.exe",
+            "Pausa Longa.exe",
             "Pausa Rápida.exe",
             "Café da manhã.exe",
             "Almoço.exe",

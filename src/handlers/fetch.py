@@ -11,7 +11,10 @@ from data.models import AppUsage, Category, DailyActivity, IntervaloEntry, Study
 from util.clean import clean_app_name, clean_domain
 
 INTERVALO_APPS = {
+    # "Intervalo" = nome legado do dummy antes de virar "Pausa Longa.exe";
+    # mantido para eventos históricos ainda não sincronizados
     "Intervalo": "Pausa Longa",
+    "Pausa Longa": "Pausa Longa",
     "Pausa Rápida": "Pausa Rápida",
     "Café da manhã": "Café da manhã",
     "Almoço": "Almoço",
