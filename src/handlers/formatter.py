@@ -55,7 +55,7 @@ def format_body(activity: DailyActivity) -> str:
     total = seconds_to_display(activity.total_seconds)
 
     lines.append("<!-- aw:start -->")
-    lines.append(f"### PC  **Tempo ativo:** {ativo} / **Total:** {total}")
+    lines.append(f"<center><h3> 💻  Ativo: {ativo} - Total: {total} </h3></center>")
     lines.append("")
     lines.append("> [!multi-column]")
 
@@ -119,5 +119,6 @@ def format_body(activity: DailyActivity) -> str:
                 lines.append(f"    - {child} **{pct:.0f}%**")
 
     lines.append("")
+    lines.append("---")
     lines.append("<!-- aw:end -->")
     return "\n".join(lines)

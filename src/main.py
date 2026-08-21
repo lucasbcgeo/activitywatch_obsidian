@@ -13,6 +13,15 @@ from log import setup_logging
 from util.paths import daily_note_path
 
 
+DAILY_NOTE_TEMPLATE = os.path.join(
+    "99_Sistema",
+    "_templates",
+    "Nota Inteira",
+    "Jornada",
+    "Nota Diária 2_ISO.md",
+)
+
+
 def main():
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
     logger = setup_logging()
@@ -34,10 +43,7 @@ def main():
     aw_port = int(os.environ.get("AW_PORT", "5600"))
 
     note_path = daily_note_path(vault_path, target_date)
-    if not os.path.isfile(note_path):
-        logger.error("Nota diária não encontrada: %s", note_path)
-        sys.exit(1)
-
+    template_path = os.path.join(vault_path, DAILY_NOTE_TEMPLATE)
     logger.info("Sincronizando %s → %s", target_date.isoformat(), note_path)
 
     # Fetch
@@ -57,7 +63,7 @@ def main():
 
     # Write
     try:
-        update_note(note_path, fm_data, body_block)
+        update_note(note_path, fm_data, body_block, template_path)
     except Exception:
         logger.exception("Erro ao atualizar nota")
         sys.exit(1)
