@@ -91,6 +91,15 @@ class FormatIntervalosTests(unittest.TestCase):
         block = format_intervalos_block(activity)
         self.assertNotIn("%", block)
 
+    def test_primeira_coluna_direto_apos_header_sem_separador(self):
+        activity = self._activity([
+            IntervaloEntry("Jantar", "Intervalo", 2160),
+        ])
+        block = format_intervalos_block(activity)
+        # Matches format_body pattern: first column directly after [!multi-column]
+        self.assertIn("> [!multi-column]\n>> [!pause]+  Intervalo", block)
+        self.assertNotIn("> [!multi-column]\n>\n>> [!pause]+  Intervalo", block)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -128,7 +128,8 @@ def format_intervalos_block(activity: DailyActivity) -> str:
     """Gera bloco Markdown com callouts multi-column para intervalos e exercicios.
 
     Soh itens com duration_seconds > 0 aparecem. Grupo soh aparece se tiver >=1 item.
-    Ordem fixa por INTERVALO_ORDER (preservada pela ordenacao em fetch).
+    Ordem dos grupos fixa (Intervalo, Exercicios); ordem dos itens preservada pela
+    pre-ordenacao em fetch.
     """
     groups: dict[str, list[IntervaloEntry]] = {}
     for iv in activity.intervalos:
@@ -143,11 +144,11 @@ def format_intervalos_block(activity: DailyActivity) -> str:
             if not items:
                 continue
             icon = "pause" if group_name == "Intervalo" else "fitness"
-            lines.append(">")
             lines.append(f">> [!{icon}]+  {group_name}")
             for iv in items:
                 lines.append(
                     f">> - {iv.rotulo} ({seconds_to_display(iv.duration_seconds)})"
                 )
+            lines.append(">")
     lines.append("<!-- aw:end-intervalos -->")
     return "\n".join(lines)
