@@ -83,6 +83,23 @@ class MigrateContentTests(unittest.TestCase):
         self.assertEqual(new, texto)
         self.assertTrue(any("Eventos" in w for w in warnings))
 
+    def test_nao_duplica_div20_ja_presente_antes_de_eventos(self):
+        texto = (
+            "## ⏰ Horários\n\n"
+            '<div style="margin-bottom: 20px;"></div>\n'
+            "\n"
+            "## 🗓️ Eventos\n\nconteudo\n"
+        )
+        new, _ = migrate_content(texto)
+        self.assertEqual(new.count('<div style="margin-bottom: 20px;"></div>'), 1)
+
+    def test_eventos_presente_sem_callouts_insere_so_skeleton(self):
+        texto = "## 🗓️ Eventos\n\nx\n"
+        new, warnings = migrate_content(texto)
+        self.assertEqual(warnings, [])
+        self.assertIn("pausa-longa-start", new)
+        self.assertLess(new.index("<!-- aw:end-intervalos -->"), new.index("## 🗓️ Eventos"))
+
 
 if __name__ == "__main__":
     unittest.main()

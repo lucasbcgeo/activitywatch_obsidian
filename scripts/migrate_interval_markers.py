@@ -96,7 +96,8 @@ def migrate_content(text: str) -> tuple[str, list[str]]:
             if not (head.endswith(DIV40) or head.endswith(DIV20)):
                 pieces.append(DIV40)
             pieces.append(block)
-            pieces.append(DIV20)
+            if not head.endswith(DIV20):
+                pieces.append(DIV20)
             text = head + "\n\n" + "\n\n".join(pieces) + "\n\n" + tail
 
     return text, warnings
@@ -121,10 +122,15 @@ def main() -> None:
     if not vault.is_dir():
         sys.exit(f"Vault não encontrado: {vault}")
 
-    migrated = 0
+    migrated = skipped = 0
     for path in collect_files(vault):
         rel = path.relative_to(vault).as_posix()
-        original = path.read_text(encoding="utf-8")
+        try:
+            original = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"[erro ] {rel}: {e}")
+            skipped += 1
+            continue
         new_text, warnings = migrate_content(original)
         for w in warnings:
             print(f"[aviso] {rel}: {w}")
@@ -134,11 +140,17 @@ def main() -> None:
         if args.dry_run:
             print(f"[seco ] {rel}")
         else:
-            path.write_text(new_text, encoding="utf-8", newline="\n")
+            try:
+                path.write_text(new_text, encoding="utf-8", newline="\n")
+            except OSError as e:
+                print(f"[erro ] {rel}: {e}")
+                migrated -= 1
+                skipped += 1
+                continue
             print(f"[ok   ] {rel}")
 
-    acao = "seriam migrados" if args.dry_run else "migrados"
-    print(f"\n{migrated} arquivo(s) {acao}")
+    acao = "seriam migradas" if args.dry_run else "migradas"
+    print(f"\n{migrated} arquivo(s) {acao}, {skipped} pulado(s)")
 
 
 if __name__ == "__main__":
