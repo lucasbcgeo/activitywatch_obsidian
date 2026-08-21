@@ -27,6 +27,13 @@ class Category:
 
 
 @dataclass
+class IntervaloEntry:
+    rotulo: str
+    group: str
+    duration_seconds: float
+
+
+@dataclass
 class DailyActivity:
     date: str
     total_seconds: float
@@ -35,3 +42,4 @@ class DailyActivity:
     uncategorized: list[AppUsage] = field(default_factory=list)
     web: list[WebVisit] = field(default_factory=list)
     study: list[StudyItem] = field(default_factory=list)
+    intervalos: list[IntervaloEntry] = field(default_factory=list)
