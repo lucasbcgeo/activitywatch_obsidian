@@ -45,6 +45,20 @@ class ExtractIntervalosTests(unittest.TestCase):
         self.assertEqual(set(INTERVALO_GROUP.values()), {"Intervalo", "Exercícios"})
         self.assertEqual(len(INTERVALO_ORDER), 6)
 
+    def test_clean_app_name_dos_intervalos_batem_com_CONSTANTES(self):
+        from util.clean import clean_app_name
+        raw_apps = [
+            "Intervalo.exe",
+            "Pausa Rápida.exe",
+            "Café da manhã.exe",
+            "Almoço.exe",
+            "Jantar.exe",
+            "Exercícios.exe",
+        ]
+        for raw in raw_apps:
+            with self.subTest(raw=raw):
+                self.assertIn(clean_app_name(raw), INTERVALO_APPS)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -238,6 +238,9 @@ def _build_categories(
 
     cat_seconds: dict[str, float] = defaultdict(float)
     for e in events:
+        raw_app = e.get("data", {}).get("app", "")
+        if clean_app_name(raw_app) in INTERVALO_APPS:
+            continue
         cat_name = _classify_event(e, classes)
         cat_seconds[cat_name] += _get_duration(e)
 
