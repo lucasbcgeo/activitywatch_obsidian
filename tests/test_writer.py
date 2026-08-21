@@ -39,139 +39,97 @@ class UpdateNoteTests(unittest.TestCase):
             self.assertNotIn("templater code", content)
 
 
-class UpdateIntervalosTests(unittest.TestCase):
-    def _base_note(self, with_markers=True):
-        markers = (
-            f"{AW_START_INTERVALO}\n\n{AW_END_INTERVALO}\n"
-            if with_markers
-            else ""
-        )
+class UpdateIntervaloMarkersTests(unittest.TestCase):
+    def _note(self):
         return (
             "---\nnota: x\n---\n\n"
             "## ⏰ Horários\n\n"
-            f"{markers}"
-            "## 🗓️ Eventos\n\nconteudo\n"
+            ">> [!alimentacao-fato] Café\n"
+            ">> `$= dv.current().alimentacao?.[0] ? \"t\" : \"—\" ` <!-- café-start --><!-- café-end -->\n"
+            "\n"
+            "<div style=\"margin-bottom: 40px;\"></div>\n"
+            "\n"
+            f"{AW_START_INTERVALO}\n"
+            "\n"
+            "> [!multi-column]\n"
+            ">> [!sumário]+  Pausa Longa \n"
+            ">> <!-- pausa-longa-start --><!-- pausa-longa-end -->\n"
+            ">>\n"
+            ">\n"
+            ">> [!sumário]+  Pausa Curta\n"
+            ">> <!-- pausa-curta-start --><!-- pausa-curta-end -->\n"
+            ">>\n"
+            "\n"
+            f"{AW_END_INTERVALO}\n"
+            "\n"
+            '<div style="margin-bottom: 20px;"></div>\n'
+            "\n"
+            "## 🗓️ Eventos\n\nconteudo manual\n"
         )
 
-    def test_substitui_bloco_intervalos_existente(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            note = Path(tmp) / "2026-08-20.md"
-            note.write_text(self._base_note(with_markers=True), encoding="utf-8")
-            intervalo_block = (
-                f"{AW_START_INTERVALO}\n> [!pause]+  Intervalo\n> - Jantar (36m)\n{AW_END_INTERVALO}"
-            )
-            update_note(
-                str(note),
-                {"pc": {"total": "PT1H"}},
-                f"{AW_START}\npc\n{AW_END}",
-                None,
-                intervalo_block,
-            )
-            content = note.read_text(encoding="utf-8")
-            self.assertIn("Jantar (36m)", content)
-            self.assertIn(AW_START_INTERVALO, content)
-            self.assertIn(AW_END_INTERVALO, content)
+    def _update(self, note, contents):
+        update_note(str(note), {"pc": {"total": "PT1H"}}, f"{AW_START}\npc\n{AW_END}", None, contents)
 
-    def test_insere_bloco_intervalos_em_secao_se_sem_marcadores(self):
+    def test_interior_substituido_preserva_marcadores_e_resto(self):
         with tempfile.TemporaryDirectory() as tmp:
-            note = Path(tmp) / "2026-08-20.md"
-            note.write_text(self._base_note(with_markers=False), encoding="utf-8")
-            intervalo_block = (
-                f"{AW_START_INTERVALO}\n> [!pause]+  Intervalo\n> - Jantar (36m)\n{AW_END_INTERVALO}"
-            )
-            update_note(
-                str(note),
-                {"pc": {"total": "PT1H"}},
-                f"{AW_START}\npc\n{AW_END}",
-                None,
-                intervalo_block,
-            )
+            note = Path(tmp) / "2026-08-21.md"
+            note.write_text(self._note(), encoding="utf-8")
+            self._update(note, {"café": "· 31m"})
             content = note.read_text(encoding="utf-8")
-            self.assertIn("Jantar (36m)", content)
-            idx_horarios = content.index("## ⏰ Horários")
-            idx_intervalo = content.index(AW_START_INTERVALO)
-            idx_eventos = content.index("## 🗓️ Eventos")
-            self.assertLess(idx_horarios, idx_intervalo)
-            self.assertLess(idx_intervalo, idx_eventos)
+            self.assertIn("<!-- café-start -->· 31m<!-- café-end -->", content)
+            self.assertIn("dv.current().alimentacao?.[0]", content)
+            self.assertIn("conteudo manual", content)
+            self.assertIn(">> [!sumário]+  Pausa Longa ", content)
 
-    def test_sem_intervalo_block_nao_altera_secao_horarios(self):
+    def test_slug_ausente_skip_sem_crash(self):
         with tempfile.TemporaryDirectory() as tmp:
-            note = Path(tmp) / "2026-08-20.md"
-            original = self._base_note(with_markers=True)
-            note.write_text(original, encoding="utf-8")
-            update_note(
-                str(note),
-                {"pc": {"total": "PT1H"}},
-                f"{AW_START}\npc\n{AW_END}",
-                None,
-                None,
-            )
+            note = Path(tmp) / "2026-08-21.md"
+            note.write_text(self._note(), encoding="utf-8")
+            self._update(note, {"café": "· 31m", "pausa-longa": "· 12m"})
             content = note.read_text(encoding="utf-8")
-            self.assertIn(f"{AW_START_INTERVALO}\n\n{AW_END_INTERVALO}", content)
+            self.assertIn("<!-- pausa-longa-start -->· 12m<!-- pausa-longa-end -->", content)
 
-    def test_sem_secao_horarios_faz_append_final(self):
+    def test_todos_slugs_ausentes_nao_altera_horarios(self):
+        # update_note sempre mexe em frontmatter/bloco PC; o que não pode
+        # acontecer é criação de marcadores ou interior em nota sem eles.
         with tempfile.TemporaryDirectory() as tmp:
-            note = Path(tmp) / "2026-08-20.md"
-            # Note without ## ⏰ Horários section and without intervalos markers
+            note = Path(tmp) / "2026-08-21.md"
             note.write_text(
-                "---\nnota: x\n---\n\n## 🗓️ Eventos\n\nconteudo\n",
+                "---\nnota: x\npc:\n  total: PT1H\n---\n\n## ⏰ Horários\n\nsem marcadores\n",
                 encoding="utf-8",
             )
-            intervalo_block = (
-                f"{AW_START_INTERVALO}\n> [!pause]+  Intervalo\n> - Jantar (36m)\n{AW_END_INTERVALO}"
-            )
-            update_note(
-                str(note),
-                {"pc": {"total": "PT1H"}},
-                f"{AW_START}\npc\n{AW_END}",
-                None,
-                intervalo_block,
-            )
+            self._update(note, {"café": "· 31m", "jantar": "· 5m"})
             content = note.read_text(encoding="utf-8")
-            self.assertIn("Jantar (36m)", content)
-            self.assertIn(AW_START_INTERVALO, content)
-            self.assertIn(AW_END_INTERVALO, content)
-            # Block appended after existing content (Eventos section intact before it)
-            idx_eventos = content.index("## 🗓️ Eventos")
-            idx_intervalo = content.index(AW_START_INTERVALO)
-            self.assertLess(idx_eventos, idx_intervalo)
+            self.assertNotIn("café-start", content)
+            self.assertNotIn("· 31m", content)
+            self.assertIn("sem marcadores", content)
 
-    def test_pc_e_intervalos_coexistem_em_nota_completa(self):
+    def test_idempotencia(self):
         with tempfile.TemporaryDirectory() as tmp:
-            note = Path(tmp) / "2026-08-20.md"
-            # Production-shaped note with both ## Dados and ## ⏰ Horários
-            note.write_text(
-                "---\nnota: x\n---\n\n"
-                "## Dados\n\n"
-                f"{AW_START}\n\n{AW_END}\n\n"
-                "## ⏰ Horários\n\n"
-                f"{AW_START_INTERVALO}\n\n{AW_END_INTERVALO}\n\n"
-                "## 🗓️ Eventos\n\nconteudo\n",
-                encoding="utf-8",
-            )
-            pc_block = f"{AW_START}\n> [!abstract]+  Apps\n> - VS Code (1h00)\n{AW_END}"
-            intervalo_block = (
-                f"{AW_START_INTERVALO}\n> [!pause]+  Intervalo\n> - Jantar (36m)\n{AW_END_INTERVALO}"
-            )
-            update_note(
-                str(note),
-                {"pc": {"total": "PT1H"}},
-                pc_block,
-                None,
-                intervalo_block,
-            )
+            note = Path(tmp) / "2026-08-21.md"
+            note.write_text(self._note(), encoding="utf-8")
+            self._update(note, {"café": "· 31m"})
+            primeira = note.read_text(encoding="utf-8")
+            self._update(note, {"café": "· 31m"})
+            self.assertEqual(note.read_text(encoding="utf-8"), primeira)
+
+    def test_bloco_intervalos_nao_mais_substituido_wholesale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "2026-08-21.md"
+            note.write_text(self._note(), encoding="utf-8")
+            self._update(note, {})
             content = note.read_text(encoding="utf-8")
-            # PC block landed in ## Dados region (before ## ⏰ Horários)
-            self.assertIn("VS Code (1h00)", content)
-            idx_pc = content.index("VS Code (1h00)")
-            idx_horarios = content.index("## ⏰ Horários")
-            self.assertLess(idx_pc, idx_horarios)
-            # Intervalos block landed in ## ⏰ Horários region (after header, before Eventos)
-            self.assertIn("Jantar (36m)", content)
-            idx_intervalo = content.index("Jantar (36m)")
-            idx_eventos = content.index("## 🗓️ Eventos")
-            self.assertLess(idx_horarios, idx_intervalo)
-            self.assertLess(idx_intervalo, idx_eventos)
+            # skeleton estático sobrevive intacto quando não há dados
+            self.assertIn(">> [!sumário]+  Pausa Curta", content)
+            self.assertIn("<!-- pausa-curta-start --><!-- pausa-curta-end -->", content)
+
+    def test_conteudo_vazio_mantem_marcadores_adjacentes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            note = Path(tmp) / "2026-08-21.md"
+            note.write_text(self._note(), encoding="utf-8")
+            self._update(note, {"café": ""})
+            content = note.read_text(encoding="utf-8")
+            self.assertIn("<!-- café-start --><!-- café-end -->", content)
 
 
 if __name__ == "__main__":

@@ -19,14 +19,15 @@ def update_note(
     fm_data: dict,
     body_block: str,
     template_path: str | None = None,
-    intervalo_block: str | None = None,
+    intervalo_contents: dict[str, str] | None = None,
 ) -> None:
     """Atualiza nota diária com dados do ActivityWatch.
 
     - Frontmatter: deep merge da chave 'pc'
     - Corpo (PC): insere/substitui bloco entre aw:start e aw:end em ## Dados
-    - Corpo (Intervalos): insere/substitui bloco entre aw:start-intervalos e
-      aw:end-intervalos em ## Horários (se intervalo_block fornecido)
+    - Corpo (Intervalos): substitui o interior de cada par
+      <!-- slug-start -->/<!-- slug-end --> (se intervalo_contents fornecido).
+      O bloco aw:start-intervalos/end-intervalos NÃO é mais tocado wholesale.
     """
     if os.path.isfile(note_path):
         with open(note_path, "r", encoding="utf-8") as f:
@@ -47,15 +48,9 @@ def update_note(
     # Merge corpo (PC)
     body = _merge_body_block(body, body_block)
 
-    # Merge corpo (Intervalos) — opcional
-    if intervalo_block is not None:
-        body = _merge_body_block(
-            body,
-            intervalo_block,
-            AW_START_INTERVALO,
-            AW_END_INTERVALO,
-            "## ⏰ Horários",
-        )
+    # Merge corpo (Intervalos): interior por métrica
+    if intervalo_contents is not None:
+        body = _merge_intervalo_markers(body, intervalo_contents)
 
     result = rebuild_note(frontmatter, body)
 
@@ -180,4 +175,25 @@ def _merge_body_block(
                 start,
             )
 
+    return body
+
+
+def _merge_intervalo_markers(body: str, contents: dict[str, str]) -> str:
+    """Substitui apenas o interior de cada par de marcadores por métrica.
+
+    Marcadores ausentes geram warning e são pulados (nota antiga ou métrica
+    sem callout correspondente). Idempotente por construção.
+    """
+    for slug, inner in contents.items():
+        pattern = re.compile(
+            rf"(<!-- {re.escape(slug)}-start -->).*?(<!-- {re.escape(slug)}-end -->)",
+            re.DOTALL,
+        )
+        body, count = pattern.subn(
+            lambda m, inner=inner: f"{m.group(1)}{inner}{m.group(2)}", body
+        )
+        if count == 0:
+            logger.warning("Marcadores de '%s' ausentes na nota", slug)
+        elif inner:
+            logger.info("Intervalo '%s' atualizado (%s)", slug, inner.strip())
     return body
