@@ -67,8 +67,8 @@ class FormatIntervalosTests(unittest.TestCase):
         # fetch pre-sorts by (group, INTERVALO_ORDER.index(rotulo)):
         # Pausa Rápida comes before Jantar. Formatter must preserve that order.
         activity = self._activity([
-            IntervaloEntry("Pausa Rápida", "Intervalo", 50),
-            IntervaloEntry("Jantar", "Intervalo", 100),
+            IntervaloEntry("Pausa Rápida", "Intervalo", 120),
+            IntervaloEntry("Jantar", "Intervalo", 300),
         ])
         block = format_intervalos_block(activity)
         self.assertLess(block.index("Pausa Rápida"), block.index("Jantar"))
@@ -99,6 +99,18 @@ class FormatIntervalosTests(unittest.TestCase):
         # Matches format_body pattern: first column directly after [!multi-column]
         self.assertIn("> [!multi-column]\n>> [!pause]+  Intervalo", block)
         self.assertNotIn("> [!multi-column]\n>\n>> [!pause]+  Intervalo", block)
+
+    def test_sub_minuto_omitido_nao_mostra_0m(self):
+        activity = self._activity([
+            IntervaloEntry("Jantar", "Intervalo", 2160),       # 36m, shows
+            IntervaloEntry("Exercícios", "Exercícios", 30),    # 0m, omitted
+            IntervaloEntry("Pausa Longa", "Intervalo", 11),    # 0m, omitted
+        ])
+        block = format_intervalos_block(activity)
+        self.assertIn("Jantar (36m)", block)
+        self.assertNotIn("Exercícios", block)
+        self.assertNotIn("Pausa Longa", block)
+        self.assertNotIn("(0m)", block)
 
 
 if __name__ == "__main__":
