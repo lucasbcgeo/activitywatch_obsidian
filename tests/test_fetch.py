@@ -172,6 +172,32 @@ class ComputeActiveSecondsTests(unittest.TestCase):
         )
         self.assertEqual(active, 600.0)
 
+    def test_not_afk_sobrepostos_contam_uma_vez(self):
+        # AW emite eventos afk/not-afk sobrepostos; união garante 1x
+        # spans: 12:00-12:30, 12:15-12:45, 12:25-12:35 -> união 12:00-12:45
+        active = _compute_active_seconds(
+            [
+                self.afk("not-afk", 30),
+                self.afk("not-afk", 30, offset=15),
+                self.afk("not-afk", 10, offset=25),
+            ],
+            [],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 2700.0)
+
+    def test_janela_categorizada_em_afks_sobrepostos_conta_uma_vez(self):
+        # café.exe 10min coberto por dois afk sobrepostos -> 600s, não 1200s
+        active = _compute_active_seconds(
+            [
+                self.afk("afk", 20),
+                self.afk("afk", 20, offset=5),
+            ],
+            [self.win("Café da manhã.exe", "", 10)],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 600.0)
+
 
 if __name__ == "__main__":
     unittest.main()

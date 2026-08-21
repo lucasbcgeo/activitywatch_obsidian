@@ -103,16 +103,37 @@ def _event_bounds(event) -> tuple[datetime, datetime]:
     return ts, ts + timedelta(seconds=_get_duration(event))
 
 
+def _merge_intervals(
+    intervals: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    """Ordena e funde intervalos sobrepostos/tocantes em (start, end)."""
+    merged: list[tuple[datetime, datetime]] = []
+    for start, end in sorted(intervals):
+        if merged and start <= merged[-1][1]:
+            prev_start, prev_end = merged[-1]
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _total_duration(intervals: list[tuple[datetime, datetime]]) -> float:
+    return sum((end - start).total_seconds() for start, end in intervals)
+
+
 def _compute_active_seconds(
     afk_events: list,
     window_events: list,
     classes: list[dict],
 ) -> float:
-    """Tempo ativo = not-afk integral + AFK que coincide com janelas de COUNT_AFK_CATEGORIES.
+    """Tempo ativo = união dos períodos not-afk com os períodos afk cobertos por
+    janelas de COUNT_AFK_CATEGORIES.
 
-    Sem janelas ou sem classes do AW, cai para not-afk puro (comportamento antigo).
+    Os eventos do watcher afk podem se sobrepor entre si (comportamento observado
+    no AW), por isso tudo é reduzido a união de intervalos: cada instante conta
+    uma única vez. Sem janelas ou sem classes do AW, cai para not-afk puro.
     """
-    window_slices: list[tuple[datetime, datetime, str]] = []
+    categorized_slices: list[tuple[datetime, datetime]] = []
     if window_events and classes:
         cache: dict[tuple[str, str], str] = {}
         for w in window_events:
@@ -120,30 +141,35 @@ def _compute_active_seconds(
             key = (data.get("app", ""), data.get("title", ""))
             if key not in cache:
                 cache[key] = _classify_event(w, classes)
-            ws, we = _event_bounds(w)
-            window_slices.append((ws, we, cache[key]))
+            if cache[key] in COUNT_AFK_CATEGORIES:
+                categorized_slices.append(_event_bounds(w))
     else:
         logger.warning(
             "Sem janelas ou classes do AW; tempo ativo cai para not-afk puro"
         )
 
-    active = 0.0
-    for e in afk_events:
-        status = e.get("data", {}).get("status", "")
-        if status == "not-afk":
-            active += _get_duration(e)
-            continue
-        if status != "afk":
-            continue
-        es, ee = _event_bounds(e)
-        for ws, we, cat in window_slices:
-            if cat not in COUNT_AFK_CATEGORIES:
-                continue
-            overlap_start = max(es, ws)
-            overlap_end = min(ee, we)
+    notafk_ivs = [
+        _event_bounds(e)
+        for e in afk_events
+        if e.get("data", {}).get("status") == "not-afk"
+    ]
+    afk_ivs = _merge_intervals(
+        [
+            _event_bounds(e)
+            for e in afk_events
+            if e.get("data", {}).get("status") == "afk"
+        ]
+    )
+
+    candidates = list(notafk_ivs)
+    for ws, we in categorized_slices:
+        for as_, ae in afk_ivs:
+            overlap_start = max(ws, as_)
+            overlap_end = min(we, ae)
             if overlap_end > overlap_start:
-                active += (overlap_end - overlap_start).total_seconds()
-    return active
+                candidates.append((overlap_start, overlap_end))
+
+    return _total_duration(_merge_intervals(candidates))
 
 
 def _aggregate_events(events: list, key_fn) -> dict[str, float]:
