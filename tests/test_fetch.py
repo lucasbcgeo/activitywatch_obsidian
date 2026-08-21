@@ -4,8 +4,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
+from datetime import datetime, timedelta, timezone
+
 from data.models import IntervaloEntry
-from handlers.fetch import INTERVALO_APPS, INTERVALO_GROUP, INTERVALO_ORDER, _extract_intervalos
+from handlers.fetch import (
+    COUNT_AFK_CATEGORIES,
+    INTERVALO_APPS,
+    INTERVALO_GROUP,
+    INTERVALO_ORDER,
+    _compute_active_seconds,
+    _extract_intervalos,
+)
 
 
 class ExtractIntervalosTests(unittest.TestCase):
@@ -58,6 +67,110 @@ class ExtractIntervalosTests(unittest.TestCase):
         for raw in raw_apps:
             with self.subTest(raw=raw):
                 self.assertIn(clean_app_name(raw), INTERVALO_APPS)
+
+
+class ComputeActiveSecondsTests(unittest.TestCase):
+    BASE = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
+
+    CLASSES = [
+        {
+            "name": ["Intervalo", "Café da manhã"],
+            "rule": {"type": "regex", "regex": "caf"},
+        },
+        {
+            "name": ["Estudando", "TogglTrack"],
+            "rule": {"type": "regex", "regex": "toggl"},
+        },
+    ]
+
+    def afk(self, status, minutes, offset=0):
+        return {
+            "timestamp": self.BASE + timedelta(minutes=offset),
+            "duration": timedelta(minutes=minutes),
+            "data": {"status": status},
+        }
+
+    def win(self, app, title, minutes, offset=0):
+        return {
+            "timestamp": self.BASE + timedelta(minutes=offset),
+            "duration": timedelta(minutes=minutes),
+            "data": {"app": app, "title": title},
+        }
+
+    def test_constante_tem_as_oito_categorias(self):
+        self.assertEqual(
+            COUNT_AFK_CATEGORIES,
+            {
+                "Intervalo > Pausa Rápida",
+                "Intervalo > Café da manhã",
+                "Intervalo > Almoço",
+                "Intervalo > Jantar",
+                "Intervalo > Pausa Longa",
+                "Estudando > TogglTrack",
+                "Exercício",
+                "X",
+            },
+        )
+
+    def test_afk_em_categoria_da_lista_conta_ativo(self):
+        active = _compute_active_seconds(
+            [self.afk("afk", 30)],
+            [self.win("Café da manhã.exe", "", 30)],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 1800.0)
+
+    def test_afk_fora_da_lista_nao_conta(self):
+        active = _compute_active_seconds(
+            [self.afk("afk", 30)],
+            [self.win("chrome.exe", "Qualquer site", 30)],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 0.0)
+
+    def test_intersecao_parcial(self):
+        # janela de 60min cobre afk de 10min -> só 10min entram
+        active = _compute_active_seconds(
+            [self.afk("afk", 10)],
+            [self.win("Café da manhã.exe", "", 60)],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 600.0)
+
+    def test_multiplas_janelas_num_mesmo_afk(self):
+        active = _compute_active_seconds(
+            [self.afk("afk", 30)],
+            [
+                self.win("Café da manhã.exe", "", 20, offset=0),
+                self.win("chrome.exe", "site", 10, offset=20),
+            ],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 1200.0)
+
+    def test_not_afk_soma_integral(self):
+        active = _compute_active_seconds(
+            [self.afk("not-afk", 45), self.afk("not-afk", 15, offset=45)],
+            [],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 3600.0)
+
+    def test_misto_not_afk_e_afk_categorizado(self):
+        active = _compute_active_seconds(
+            [self.afk("not-afk", 30), self.afk("afk", 30, offset=30)],
+            [self.win("TogglTrack.exe", "toggl", 60)],
+            self.CLASSES,
+        )
+        self.assertEqual(active, 3600.0)
+
+    def test_sem_classes_fallback_not_afk(self):
+        active = _compute_active_seconds(
+            [self.afk("not-afk", 10), self.afk("afk", 20, offset=10)],
+            [self.win("Café da manhã.exe", "", 30)],
+            [],
+        )
+        self.assertEqual(active, 600.0)
 
 
 if __name__ == "__main__":

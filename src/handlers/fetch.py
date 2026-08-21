@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -33,6 +34,17 @@ INTERVALO_ORDER = [
     "Jantar",
     "Exercícios",
 ]
+
+COUNT_AFK_CATEGORIES = {
+    "Intervalo > Pausa Rápida",
+    "Intervalo > Café da manhã",
+    "Intervalo > Almoço",
+    "Intervalo > Jantar",
+    "Intervalo > Pausa Longa",
+    "Estudando > TogglTrack",
+    "Exercício",
+    "X",
+}
 
 
 def _extract_intervalos(
@@ -83,6 +95,55 @@ def _get_duration(event) -> float:
     if hasattr(d, "total_seconds"):
         return d.total_seconds()
     return float(d)
+
+
+def _event_bounds(event) -> tuple[datetime, datetime]:
+    """Converte evento AW em (start, end) absolutos."""
+    ts = event["timestamp"]
+    return ts, ts + timedelta(seconds=_get_duration(event))
+
+
+def _compute_active_seconds(
+    afk_events: list,
+    window_events: list,
+    classes: list[dict],
+) -> float:
+    """Tempo ativo = not-afk integral + AFK que coincide com janelas de COUNT_AFK_CATEGORIES.
+
+    Sem janelas ou sem classes do AW, cai para not-afk puro (comportamento antigo).
+    """
+    window_slices: list[tuple[datetime, datetime, str]] = []
+    if window_events and classes:
+        cache: dict[tuple[str, str], str] = {}
+        for w in window_events:
+            data = w.get("data", {})
+            key = (data.get("app", ""), data.get("title", ""))
+            if key not in cache:
+                cache[key] = _classify_event(w, classes)
+            ws, we = _event_bounds(w)
+            window_slices.append((ws, we, cache[key]))
+    else:
+        logger.warning(
+            "Sem janelas ou classes do AW; tempo ativo cai para not-afk puro"
+        )
+
+    active = 0.0
+    for e in afk_events:
+        status = e.get("data", {}).get("status", "")
+        if status == "not-afk":
+            active += _get_duration(e)
+            continue
+        if status != "afk":
+            continue
+        es, ee = _event_bounds(e)
+        for ws, we, cat in window_slices:
+            if cat not in COUNT_AFK_CATEGORIES:
+                continue
+            overlap_start = max(es, ws)
+            overlap_end = min(ee, we)
+            if overlap_end > overlap_start:
+                active += (overlap_end - overlap_start).total_seconds()
+    return active
 
 
 def _aggregate_events(events: list, key_fn) -> dict[str, float]:
