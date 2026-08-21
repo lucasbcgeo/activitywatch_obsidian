@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from aw_client import ActivityWatchClient
 
 from handlers.fetch import fetch_daily
-from handlers.formatter import format_body, format_frontmatter
+from handlers.formatter import format_body, format_frontmatter, format_intervalos_block
 from handlers.writer import update_note
 from log import setup_logging
 from util.paths import daily_note_path
@@ -60,10 +60,11 @@ def main():
     # Format
     fm_data = format_frontmatter(activity)
     body_block = format_body(activity)
+    intervalo_block = format_intervalos_block(activity)
 
     # Write
     try:
-        update_note(note_path, fm_data, body_block, template_path)
+        update_note(note_path, fm_data, body_block, template_path, intervalo_block)
     except Exception:
         logger.exception("Erro ao atualizar nota")
         sys.exit(1)
