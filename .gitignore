@@ -31,4 +31,6 @@ logs/
 .DS_Store
 Thumbs.db
 
-# opencode local state.opencode/
+
+# opencode local state
+.opencode/
