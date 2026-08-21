@@ -159,15 +159,19 @@ def fetch_daily(client: ActivityWatchClient, target_date: date) -> DailyActivity
     """Busca dados de todos os watchers para um dia específico."""
     start, end = _day_range(target_date)
     buckets = client.get_buckets()
+    host = os.environ.get("AW_HOST", "localhost")
+    port = int(os.environ.get("AW_PORT", "5600"))
+    classes = _fetch_categories(host, port)
 
     # --- Window watcher (apps) ---
     window_bid = _find_bucket(buckets, "aw-watcher-window")
     app_totals: dict[str, float] = {}
     total_seconds = 0.0
     intervalos: list[IntervaloEntry] = []
+    window_events: list = []
     if window_bid:
-        events = client.get_events(window_bid, limit=-1, start=start, end=end)
-        raw_totals = _aggregate_events(events, lambda e: e.get("data", {}).get("app", ""))
+        window_events = client.get_events(window_bid, limit=-1, start=start, end=end)
+        raw_totals = _aggregate_events(window_events, lambda e: e.get("data", {}).get("app", ""))
         for raw_name, secs in raw_totals.items():
             clean = clean_app_name(raw_name)
             app_totals[clean] = app_totals.get(clean, 0.0) + secs
@@ -175,7 +179,7 @@ def fetch_daily(client: ActivityWatchClient, target_date: date) -> DailyActivity
         total_seconds = sum(app_totals.values())
         logger.info(
             "Window: %d eventos, %.0fs total PC, %d intervalos",
-            len(events),
+            len(window_events),
             total_seconds,
             len(intervalos),
         )
@@ -184,10 +188,8 @@ def fetch_daily(client: ActivityWatchClient, target_date: date) -> DailyActivity
     afk_bid = _find_bucket(buckets, "aw-watcher-afk")
     active_seconds = 0.0
     if afk_bid:
-        events = client.get_events(afk_bid, limit=-1, start=start, end=end)
-        for e in events:
-            if e.get("data", {}).get("status") == "not-afk":
-                active_seconds += _get_duration(e)
+        afk_events = client.get_events(afk_bid, limit=-1, start=start, end=end)
+        active_seconds = _compute_active_seconds(afk_events, window_events, classes)
         logger.info("AFK: tempo ativo %.0fs", active_seconds)
 
     # --- Web watcher (sites) ---
@@ -226,7 +228,7 @@ def fetch_daily(client: ActivityWatchClient, target_date: date) -> DailyActivity
     logger.info("Estudo: %d itens identificados", len(study_items))
 
     # --- Categorias (via settings do AW) ---
-    categories = _build_categories(client, window_bid, start, end)
+    categories = _build_categories(client, window_bid, start, end, classes)
 
     apps_sorted = [
         AppUsage(name=name, duration_seconds=dur)
@@ -283,15 +285,12 @@ def _build_categories(
     window_bid: str | None,
     start: datetime,
     end: datetime,
+    classes: list[dict],
 ) -> list[Category]:
     """Classifica eventos do dia nas categorias configuradas no AW."""
     if not window_bid:
         return []
 
-    import os
-    host = os.environ.get("AW_HOST", "localhost")
-    port = int(os.environ.get("AW_PORT", "5600"))
-    classes = _fetch_categories(host, port)
     if not classes:
         return []
 
