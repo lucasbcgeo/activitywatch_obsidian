@@ -10,15 +10,23 @@ logger = logging.getLogger("aw-sync.writer")
 
 AW_START = "<!-- aw:start -->"
 AW_END = "<!-- aw:end -->"
+AW_START_INTERVALO = "<!-- aw:start-intervalos -->"
+AW_END_INTERVALO = "<!-- aw:end-intervalos -->"
 
 
 def update_note(
-    note_path: str, fm_data: dict, body_block: str, template_path: str | None = None
+    note_path: str,
+    fm_data: dict,
+    body_block: str,
+    template_path: str | None = None,
+    intervalo_block: str | None = None,
 ) -> None:
     """Atualiza nota diária com dados do ActivityWatch.
 
     - Frontmatter: deep merge da chave 'pc'
-    - Corpo: insere/substitui bloco entre aw:start e aw:end em ## Dados
+    - Corpo (PC): insere/substitui bloco entre aw:start e aw:end em ## Dados
+    - Corpo (Intervalos): insere/substitui bloco entre aw:start-intervalos e
+      aw:end-intervalos em ## Horários (se intervalo_block fornecido)
     """
     if os.path.isfile(note_path):
         with open(note_path, "r", encoding="utf-8") as f:
@@ -36,8 +44,18 @@ def update_note(
     frontmatter = deep_merge(frontmatter, fm_data)
     logger.info("Frontmatter atualizado com chave 'pc'")
 
-    # Merge corpo
+    # Merge corpo (PC)
     body = _merge_body_block(body, body_block)
+
+    # Merge corpo (Intervalos) — opcional
+    if intervalo_block is not None:
+        body = _merge_body_block(
+            body,
+            intervalo_block,
+            AW_START_INTERVALO,
+            AW_END_INTERVALO,
+            "## ⏰ Horários",
+        )
 
     result = rebuild_note(frontmatter, body)
 
@@ -127,27 +145,39 @@ def _vault_name_from_note_path(note_path: str) -> str:
     return "Lucas"
 
 
-def _merge_body_block(body: str, block: str) -> str:
-    """Insere ou substitui bloco aw:start/end na seção ## Dados."""
-    pattern = re.compile(
-        rf"{re.escape(AW_START)}.*?{re.escape(AW_END)}",
-        re.DOTALL,
-    )
+def _merge_body_block(
+    body: str,
+    block: str,
+    start: str = AW_START,
+    end: str = AW_END,
+    section_fallback: str = "## Dados",
+) -> str:
+    """Insere ou substitui bloco delimitado por start/end.
+
+    Se marcadores existem, substitui conteudo entre eles.
+    Se nao, insere apos section_fallback (secao header). Fallback final: append.
+    """
+    pattern = re.compile(rf"{re.escape(start)}.*?{re.escape(end)}", re.DOTALL)
 
     if pattern.search(body):
-        # Substituir bloco existente
         body = pattern.sub(block, body)
-        logger.info("Bloco AW atualizado (merge)")
+        logger.info("Bloco %s atualizado (merge)", start)
     else:
-        # Inserir no final de ## Dados
-        dados_match = re.search(r"(## Dados\b.*?)(\n## |\n# |\Z)", body, re.DOTALL)
-        if dados_match:
-            insert_pos = dados_match.end(1)
+        section_match = re.search(
+            rf"({re.escape(section_fallback)}\b.*?)(\n## |\n# |\Z)",
+            body,
+            re.DOTALL,
+        )
+        if section_match:
+            insert_pos = section_match.end(1)
             body = body[:insert_pos] + "\n" + block + "\n" + body[insert_pos:]
-            logger.info("Bloco AW inserido em ## Dados")
+            logger.info("Bloco %s inserido em %s", start, section_fallback)
         else:
-            # Fallback: append no final
             body = body.rstrip() + "\n\n" + block + "\n"
-            logger.warning("Seção ## Dados não encontrada, bloco inserido no final")
+            logger.warning(
+                "%s nao encontrada, bloco %s inserido no final",
+                section_fallback,
+                start,
+            )
 
     return body
