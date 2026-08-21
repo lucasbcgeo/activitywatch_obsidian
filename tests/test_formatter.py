@@ -31,5 +31,66 @@ class FormatFrontmatterTests(unittest.TestCase):
                 self.assertNotIn("games", format_frontmatter(self.activity(categories)))
 
 
+from data.models import IntervaloEntry
+from handlers.formatter import format_intervalos_block
+
+
+class FormatIntervalosTests(unittest.TestCase):
+    def _activity(self, intervalos):
+        return DailyActivity(
+            date=date(2026, 8, 20).isoformat(),
+            total_seconds=0,
+            active_seconds=0,
+            intervalos=intervalos,
+        )
+
+    def test_so_itens_positivos_aparecem(self):
+        activity = self._activity([
+            IntervaloEntry("Jantar", "Intervalo", 2160),    # 36m
+            IntervaloEntry("Exercícios", "Exercícios", 0),  # omitido
+        ])
+        block = format_intervalos_block(activity)
+        self.assertIn("Jantar (36m)", block)
+        self.assertNotIn("Exercícios", block)
+        self.assertIn("<!-- aw:start-intervalos -->", block)
+        self.assertIn("<!-- aw:end-intervalos -->", block)
+
+    def test_grupo_so_aparece_se_tem_item_positivo(self):
+        activity = self._activity([])
+        block = format_intervalos_block(activity)
+        self.assertNotIn("Intervalo", block)
+        self.assertNotIn("Exercícios", block)
+        self.assertIn("<!-- aw:start-intervalos -->", block)
+        self.assertIn("<!-- aw:end-intervalos -->", block)
+
+    def test_preserva_ordem_pre_ordenada_do_grupo(self):
+        # fetch pre-sorts by (group, INTERVALO_ORDER.index(rotulo)):
+        # Pausa Rápida comes before Jantar. Formatter must preserve that order.
+        activity = self._activity([
+            IntervaloEntry("Pausa Rápida", "Intervalo", 50),
+            IntervaloEntry("Jantar", "Intervalo", 100),
+        ])
+        block = format_intervalos_block(activity)
+        self.assertLess(block.index("Pausa Rápida"), block.index("Jantar"))
+
+    def test_duas_secoes_intervalo_e_exercicios(self):
+        activity = self._activity([
+            IntervaloEntry("Jantar", "Intervalo", 2160),
+            IntervaloEntry("Exercícios", "Exercícios", 2700),
+        ])
+        block = format_intervalos_block(activity)
+        self.assertIn("Intervalo", block)
+        self.assertIn("Exercícios", block)
+        self.assertIn("Jantar (36m)", block)
+        self.assertIn("Exercícios (45m)", block)
+
+    def test_sem_porcentagem_no_bloco(self):
+        activity = self._activity([
+            IntervaloEntry("Jantar", "Intervalo", 2160),
+        ])
+        block = format_intervalos_block(activity)
+        self.assertNotIn("%", block)
+
+
 if __name__ == "__main__":
     unittest.main()
