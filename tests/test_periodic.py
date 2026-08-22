@@ -7,11 +7,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from handlers.periodic import (
+    MEDIA_FIELDS,
+    _compute_medias,
     candidate_paths,
     format_iso_duration,
     nested_get,
     nested_set,
     numeric_value,
+    NUMERIC_FIELDS,
     parse_iso_duration,
     period_bounds,
 )
@@ -134,6 +137,82 @@ class CandidatePathsTests(unittest.TestCase):
                 str(Path("V") / "01_Arquivos" / "Jornada" / "2026" / "2026.md"),
             ],
         )
+
+
+class ComputeMediasTests(unittest.TestCase):
+    FM_A = {
+        "pc": {"tempo_ativo": "PT1H", "tempo_total": "PT4H"},
+        "exercicio": True,
+        "leitura": False,
+        "procrastinacao": 5,
+    }
+    FM_B = {
+        "pc": {"tempo_ativo": "PT2H"},
+        "cel": {"tempo_total": "PT30M"},
+        "tempo_tela": "PT1H30M",
+        "redesSociais": "PT15M",
+        "exercicio": True,
+        "lazer": True,
+        "procrastinacao": 8,
+    }
+    FM_C = {
+        "pc": {"tempo_ativo": "PT45M"},
+        "tempo_tela": "PT2H",
+        "exercicio": False,
+        "leitura": True,
+        "procrastinacao": 9,
+        "redesSociais": ["PT5M", "PT10M"],
+    }
+    FM_VAZIA = {"description": "sem dados"}
+
+    def test_medias_iso(self):
+        medias = _compute_medias([self.FM_A, self.FM_B, self.FM_C])
+        # tempo_ativo: 60+120+45 = 225min / 3 = 75min
+        self.assertEqual(medias["pc"]["tempo_ativo_media"], "PT1H15M")
+        # tempo_total: só A tem -> 240min
+        self.assertEqual(medias["pc"]["tempo_total_media"], "PT4H")
+        # tempo_tela: B 90min + C 120min = 105min
+        self.assertEqual(medias["tempo_tela_media"], "PT1H45M")
+        # redesSociais: lista soma elementos -> B 15 + C 5+10 = 30min / 3 valores
+        self.assertEqual(medias["redesSociais_media"], "PT10M")
+        # cel: só B
+        self.assertEqual(medias["cel"]["tempo_total_media"], "PT30M")
+
+    def test_medias_numericas(self):
+        medias = _compute_medias([self.FM_A, self.FM_B, self.FM_C])
+        # exercicio: (1+1+0)/3 = 0.666... -> 0.67
+        self.assertEqual(medias["exercicio.media"], 0.67)
+        # lazer: só B tem -> 1.0
+        self.assertEqual(medias["lazer.media"], 1.0)
+        # leitura: (0+1)/2 = 0.5
+        self.assertEqual(medias["leitura.media"], 0.5)
+        # procrastinacao: (5+8+9)/3 = 7.33
+        self.assertEqual(medias["procrastinacao.media"], 7.33)
+
+    def test_campos_mapem_para_chaves_planas_ou_aninhadas(self):
+        medias = _compute_medias([self.FM_A, self.FM_B, self.FM_C])
+        self.assertIn(("exercicio.media",), [dest for dest, _ in NUMERIC_FIELDS])
+        self.assertIn(("pc", "tempo_ativo_media"), [dest for dest, _ in MEDIA_FIELDS])
+
+    def test_diaria_sem_campo_nao_conta_no_denominador(self):
+        medias = _compute_medias([self.FM_VAZIA, self.FM_A])
+        # só A tem tempo_total
+        self.assertEqual(medias["pc"]["tempo_total_media"], "PT4H")
+        self.assertNotIn("redesSociais_media", medias)
+        self.assertNotIn("cel", medias)
+
+    def test_nenhum_dia_valido_nao_gera_chave(self):
+        medias = _compute_medias([{"exercicio": "talvez"}, {}])
+        self.assertEqual(medias, {})
+
+    def test_duracao_invalida_sai_do_denominador(self):
+        medias = _compute_medias([{"tempo_tela": "lixo"}, {"tempo_tela": "PT1H"}])
+        self.assertEqual(medias["tempo_tela_media"], "PT1H")
+
+    def test_arredondamento_iso_segundos(self):
+        # 59.5s médios -> round -> 60s -> PT1M
+        medias = _compute_medias([{"redesSociais": "PT59S"}, {"redesSociais": "PT60S"}])
+        self.assertEqual(medias["redesSociais_media"], "PT1M")
 
 
 if __name__ == "__main__":

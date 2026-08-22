@@ -139,3 +139,43 @@ def candidate_paths(vault: str, slug: str) -> list[str]:
         year = slug[:4]
         return [os.path.join(base, year, f"{slug}.md"), os.path.join(base, f"{slug}.md")]
     return [os.path.join(base, f"{slug}.md"), os.path.join(base, slug, f"{slug}.md")]
+
+
+def _source_values(raw) -> list:
+    """Normaliza valor-fonte em lista de escalares (redesSociais pode ser lista)."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [item for item in raw if item is not None]
+    return [raw]
+
+
+def _compute_medias(frontmatters: list[dict]) -> dict:
+    """Médias escalares das diárias do período.
+
+    Denominador = dias com valor parseável (mesma regra dos *_TP_media.js).
+    Campo sem nenhum dia válido não gera chave (periódica mantém valor atual).
+    """
+    medias: dict = {}
+
+    for dest, source in MEDIA_FIELDS:
+        seconds = [
+            parsed
+            for fm in frontmatters
+            for raw in _source_values(nested_get(fm, source))
+            if (parsed := parse_iso_duration(raw)) is not None
+        ]
+        if seconds:
+            media = round(sum(seconds) / len(seconds))
+            nested_set(medias, dest, format_iso_duration(media))
+
+    for dest, source in NUMERIC_FIELDS:
+        values = [
+            number
+            for fm in frontmatters
+            if (number := numeric_value(nested_get(fm, source))) is not None
+        ]
+        if values:
+            nested_set(medias, dest, round(sum(values) / len(values), 2))
+
+    return medias
