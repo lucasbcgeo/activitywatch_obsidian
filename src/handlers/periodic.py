@@ -179,3 +179,54 @@ def _compute_medias(frontmatters: list[dict]) -> dict:
             nested_set(medias, dest, round(sum(values) / len(values), 2))
 
     return medias
+
+
+def _collect_daily_frontmatters(vault: str, start: date, end: date) -> list[dict]:
+    frontmatters = []
+    day = start
+    while day <= end:
+        path = daily_note_path(vault, day)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as fh:
+                frontmatter, _body = parse_note(fh.read())
+            if frontmatter:
+                frontmatters.append(frontmatter)
+        day += timedelta(days=1)
+    return frontmatters
+
+
+def _rewrite_with_medias(note_path: str, medias: dict) -> bool:
+    """Merge das médias no frontmatter preservando corpo. False = nada mudou."""
+    with open(note_path, encoding="utf-8") as fh:
+        content = fh.read()
+    frontmatter, body = parse_note(content)
+    merged = deep_merge(frontmatter, medias)
+    result = rebuild_note(merged, body)
+    if result == content:
+        return False
+    with open(note_path, "w", encoding="utf-8") as fh:
+        fh.write(result)
+    return True
+
+
+def update_periodic_notes(target_date: date, vault: str) -> list[str]:
+    """Atualiza periódicas EXISTENTES contendo target_date; retorna as alteradas.
+
+    Nunca cria arquivo novo; ausente = pula silenciosamente. Sem diárias com
+    valores no período, nenhuma média é gerada e nada é escrito.
+    """
+    updated = []
+    seen: set[str] = set()
+    for slug, start, end in period_bounds(target_date):
+        medias = _compute_medias(_collect_daily_frontmatters(vault, start, end))
+        if not medias:
+            continue
+        for path in candidate_paths(vault, slug):
+            normalized = os.path.normpath(path)
+            if normalized in seen or not os.path.isfile(path):
+                continue
+            seen.add(normalized)
+            if _rewrite_with_medias(path, medias):
+                updated.append(path)
+                logger.info("Periódica atualizada: %s", path)
+    return updated

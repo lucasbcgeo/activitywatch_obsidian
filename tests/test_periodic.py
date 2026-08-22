@@ -16,7 +16,9 @@ from handlers.periodic import (
     numeric_value,
     NUMERIC_FIELDS,
     parse_iso_duration,
+    parse_note,
     period_bounds,
+    update_periodic_notes,
 )
 
 
@@ -213,6 +215,138 @@ class ComputeMediasTests(unittest.TestCase):
         # 59.5s médios -> round -> 60s -> PT1M
         medias = _compute_medias([{"redesSociais": "PT59S"}, {"redesSociais": "PT60S"}])
         self.assertEqual(medias["redesSociais_media"], "PT1M")
+
+
+JORNADA = Path("01_Arquivos") / "Jornada"
+
+
+def write_note(root: Path, relative: Path, text: str) -> Path:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+class UpdatePeriodicNotesTests(unittest.TestCase):
+    TARGET = date(2026, 8, 19)  # quarta-feira, semana ISO 34
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.vault = Path(self._tmp.name)
+
+        self.semanal = write_note(
+            self.vault,
+            JORNADA / "2026" / "Semanas" / "2026-W34.md",
+            "---\n"
+            "nota.Tipo: Regs-Semanal\n"
+            "year: 2026\n"
+            "pc:\n"
+            "  tempo_total_media: PT9H\n"
+            "cel:\n"
+            "  tempo_total_media:\n"
+            "procrastinacao.media: 8.17\n"
+            "description: velho\n"
+            "---\n"
+            "\n"
+            "# Log\n\nMARCADOR-CORPO\n",
+        )
+        write_note(
+            self.vault,
+            JORNADA / "2026" / "08" / "2026-08-18.md",
+            "---\npc:\n  tempo_ativo: PT1H\n  tempo_total: PT4H\n"
+            "exercicio: true\nleitura: false\nprocrastinacao: 5\n---\ncorpo\n",
+        )
+        write_note(
+            self.vault,
+            JORNADA / "2026" / "08" / "2026-08-19.md",
+            "---\npc:\n  tempo_ativo: PT2H\ncel:\n  tempo_total: PT30M\n"
+            "tempo_tela: PT1H30M\nredesSociais: PT15M\n"
+            "exercicio: true\nlazer: true\nprocrastinacao: 8\n---\ncorpo\n",
+        )
+        write_note(
+            self.vault,
+            JORNADA / "2026" / "08" / "2026-08-20.md",
+            "---\npc:\n  tempo_ativo: PT45M\ntempo_tela: PT2H\n"
+            "exercicio: false\nleitura: true\nprocrastinacao: 9\n---\ncorpo\n",
+        )
+
+    def _weekly_content(self) -> str:
+        return self.semanal.read_text(encoding="utf-8")
+
+    def test_medias_iso_e_numericas_calculadas(self):
+        updated = update_periodic_notes(self.TARGET, str(self.vault))
+
+        self.assertIn(str(self.semanal), updated)
+        fm, body = parse_note(self._weekly_content())
+        self.assertEqual(fm["pc"]["tempo_ativo_media"], "PT1H15M")
+        self.assertEqual(fm["pc"]["tempo_total_media"], "PT4H")
+        self.assertEqual(fm["cel"]["tempo_total_media"], "PT30M")
+        self.assertEqual(fm["tempo_tela_media"], "PT1H45M")
+        self.assertEqual(fm["redesSociais_media"], "PT15M")
+        self.assertEqual(fm["exercicio.media"], 0.67)
+        self.assertEqual(fm["lazer.media"], 1.0)
+        self.assertEqual(fm["leitura.media"], 0.5)
+        self.assertEqual(fm["procrastinacao.media"], 7.33)
+
+    def test_dias_sem_campo_nao_contam_no_denominador(self):
+        update_periodic_notes(self.TARGET, str(self.vault))
+        fm, _body = parse_note(self._weekly_content())
+        # tempo_tela: só qua (90min) e qui (120min) têm -> 105min
+        self.assertEqual(fm["tempo_tela_media"], "PT1H45M")
+        # lazer: só qua tem -> 1.0 (terça sem lazer NÃO conta como false)
+        self.assertEqual(fm["lazer.media"], 1.0)
+
+    def test_preserva_corpo_e_campos_extras(self):
+        update_periodic_notes(self.TARGET, str(self.vault))
+        fm, body = parse_note(self._weekly_content())
+        self.assertEqual(body.strip(), "# Log\n\nMARCADOR-CORPO")
+        self.assertEqual(fm["nota.Tipo"], "Regs-Semanal")
+        self.assertEqual(fm["year"], 2026)
+        self.assertEqual(fm["description"], "velho")
+
+    def test_periodica_inexistente_pula_sem_erro(self):
+        with tempfile.TemporaryDirectory() as vazio:
+            updated = update_periodic_notes(self.TARGET, vazio)
+            self.assertEqual(updated, [])
+            self.assertFalse((Path(vazio) / "01_Arquivos").exists())
+
+    def test_idempotencia(self):
+        update_periodic_notes(self.TARGET, str(self.vault))
+        primeira = self._weekly_content()
+
+        segunda = update_periodic_notes(self.TARGET, str(self.vault))
+
+        self.assertEqual(segunda, [])
+        self.assertEqual(self._weekly_content(), primeira)
+
+    def test_trimestre_e_mes_quando_existem(self):
+        trimestral = write_note(
+            self.vault, JORNADA / "2026" / "2026-Q3.md", "---\nnota.Tipo: Regs-Tri\n---\ntri\n"
+        )
+        mensal = write_note(
+            self.vault, JORNADA / "2026" / "2026-08.md", "---\nnota.Tipo: Regs-Mes\n---\nmes\n"
+        )
+
+        updated = update_periodic_notes(self.TARGET, str(self.vault))
+
+        self.assertIn(str(trimestral), updated)
+        self.assertIn(str(mensal), updated)
+        fm_tri, _ = parse_note(trimestral.read_text(encoding="utf-8"))
+        fm_mes, _ = parse_note(mensal.read_text(encoding="utf-8"))
+        self.assertEqual(fm_tri["pc"]["tempo_ativo_media"], "PT1H15M")
+        self.assertEqual(fm_mes["procrastinacao.media"], 7.33)
+
+    def test_mensal_na_raiz_da_jornada_tambem_atualiza(self):
+        mensal_raiz = write_note(
+            self.vault, JORNADA / "2026-08.md", "---\nnota.Tipo: Regs-Mes-Raiz\n---\nx\n"
+        )
+        updated = update_periodic_notes(self.TARGET, str(self.vault))
+        self.assertIn(str(mensal_raiz), updated)
+
+    def test_sync_do_domingo_pega_a_mesma_semana(self):
+        updated = update_periodic_notes(date(2026, 8, 23), str(self.vault))
+        self.assertIn(str(self.semanal), updated)
 
 
 if __name__ == "__main__":
