@@ -8,6 +8,7 @@ from aw_client import ActivityWatchClient
 
 from handlers.fetch import fetch_daily
 from handlers.formatter import format_body, format_frontmatter, format_intervalo_contents
+from handlers.periodic import update_periodic_notes
 from handlers.writer import update_note
 from log import setup_logging
 from util.paths import daily_note_path
@@ -69,6 +70,17 @@ def main():
         logger.exception("Erro ao atualizar nota")
         sys.exit(1)
 
+    # Periódicas (semanal/mensal/trimestral/anual) contendo o dia alvo
+    try:
+        periodic_updated = update_periodic_notes(target_date, vault_path)
+    except Exception:
+        logger.exception("Erro ao atualizar notas periódicas")
+        sys.exit(1)
+
+    logger.info(
+        "Notas periódicas atualizadas: %s",
+        ", ".join(periodic_updated) or "nenhuma",
+    )
     logger.info("Sync concluído com sucesso!")
 
 
