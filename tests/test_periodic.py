@@ -7,11 +7,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from handlers.periodic import (
+    candidate_paths,
     format_iso_duration,
     nested_get,
     nested_set,
     numeric_value,
     parse_iso_duration,
+    period_bounds,
 )
 
 
@@ -75,6 +77,63 @@ class NestedGetSetTests(unittest.TestCase):
         nested_set(fm, ("pc", "tempo_ativo_media"), "PT1H")
         nested_set(fm, ("exercicio.media",), 0.5)
         self.assertEqual(fm, {"pc": {"tempo_ativo_media": "PT1H"}, "exercicio.media": 0.5})
+
+
+class PeriodBoundsTests(unittest.TestCase):
+    def test_semana_iso_mesmo_ano(self):
+        # 2026-08-19 é quarta-feira da semana ISO 34 (seg 17/08 – dom 23/08)
+        bounds = {slug: (start, end) for slug, start, end in period_bounds(date(2026, 8, 19))}
+        self.assertEqual(bounds["2026-W34"], (date(2026, 8, 17), date(2026, 8, 23)))
+
+    def test_semana_iso_vira_de_ano(self):
+        # 2027-01-01 é sexta da semana ISO 53 de 2026 (seg 28/12/2026 – dom 03/01/2027)
+        bounds = {slug: (start, end) for slug, start, end in period_bounds(date(2027, 1, 1))}
+        self.assertIn("2026-W53", bounds)
+        self.assertEqual(bounds["2026-W53"], (date(2026, 12, 28), date(2027, 1, 3)))
+
+    def test_mes(self):
+        bounds = {slug: (start, end) for slug, start, end in period_bounds(date(2026, 8, 19))}
+        self.assertEqual(bounds["2026-08"], (date(2026, 8, 1), date(2026, 8, 31)))
+
+    def test_trimestre(self):
+        bounds = {slug: (start, end) for slug, start, end in period_bounds(date(2026, 8, 19))}
+        self.assertEqual(bounds["2026-Q3"], (date(2026, 7, 1), date(2026, 9, 30)))
+
+    def test_ano(self):
+        bounds = {slug: (start, end) for slug, start, end in period_bounds(date(2026, 8, 19))}
+        self.assertEqual(bounds["2026"], (date(2026, 1, 1), date(2026, 12, 31)))
+
+
+class CandidatePathsTests(unittest.TestCase):
+    def test_semana(self):
+        self.assertEqual(
+            candidate_paths("V", "2026-W34"),
+            [str(Path("V") / "01_Arquivos" / "Jornada" / "2026" / "Semanas" / "2026-W34.md")],
+        )
+
+    def test_trimestre(self):
+        self.assertEqual(
+            candidate_paths("V", "2026-Q3"),
+            [str(Path("V") / "01_Arquivos" / "Jornada" / "2026" / "2026-Q3.md")],
+        )
+
+    def test_mes_dois_candidatos(self):
+        self.assertEqual(
+            candidate_paths("V", "2026-08"),
+            [
+                str(Path("V") / "01_Arquivos" / "Jornada" / "2026" / "2026-08.md"),
+                str(Path("V") / "01_Arquivos" / "Jornada" / "2026-08.md"),
+            ],
+        )
+
+    def test_ano_dois_candidatos(self):
+        self.assertEqual(
+            candidate_paths("V", "2026"),
+            [
+                str(Path("V") / "01_Arquivos" / "Jornada" / "2026.md"),
+                str(Path("V") / "01_Arquivos" / "Jornada" / "2026" / "2026.md"),
+            ],
+        )
 
 
 if __name__ == "__main__":
