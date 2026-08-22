@@ -182,13 +182,19 @@ def _compute_medias(frontmatters: list[dict]) -> dict:
 
 
 def _collect_daily_frontmatters(vault: str, start: date, end: date) -> list[dict]:
+    """Frontmatters das diárias de start..end; ausentes ou ilegíveis são ignoradas."""
     frontmatters = []
     day = start
     while day <= end:
         path = daily_note_path(vault, day)
         if os.path.isfile(path):
-            with open(path, encoding="utf-8") as fh:
-                frontmatter, _body = parse_note(fh.read())
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    frontmatter, _body = parse_note(fh.read())
+            except Exception:
+                logger.warning("Diária ilegível, ignorada: %s", path)
+                day += timedelta(days=1)
+                continue
             if frontmatter:
                 frontmatters.append(frontmatter)
         day += timedelta(days=1)

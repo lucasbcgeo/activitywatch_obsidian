@@ -348,6 +348,11 @@ class UpdatePeriodicNotesTests(unittest.TestCase):
         updated = update_periodic_notes(date(2026, 8, 23), str(self.vault))
         self.assertIn(str(self.semanal), updated)
 
+    def test_diaria_ilegivel_nao_aborta_sync(self):
+        write_note(self.vault, JORNADA / "2026" / "08" / "2026-08-21.md", "---\npc:\n\ttempo_ativo\n---\ncorpo\n")
+        updated = update_periodic_notes(self.TARGET, str(self.vault))
+        self.assertIn(str(self.semanal), updated)
+
 
 if __name__ == "__main__":
     unittest.main()
